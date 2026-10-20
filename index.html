@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Star Catcher</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b1020; overflow: hidden; touch-action: none; }
+    canvas { display: block; margin: 0 auto; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+</head>
+<body>
+<script>
+// Star Catcher: drag your finger (or mouse) to move the basket and catch falling stars.
+// Missing 3 stars ends the game. Tap to restart.
+
+class GameScene extends Phaser.Scene {
+  constructor() { super('game'); }
+
+  create() {
+    const { width, height } = this.scale;
+    this.score = 0;
+    this.lives = 3;
+    this.over = false;
+
+    // Generate textures so no image assets are needed.
+    const g = this.add.graphics();
+    g.fillStyle(0xffd23f).fillCircle(16, 16, 16).generateTexture('star', 32, 32).clear();
+    g.fillStyle(0x4ecdc4).fillRoundedRect(0, 0, 90, 24, 8).generateTexture('basket', 90, 24).clear();
+    g.destroy();
+
+    this.basket = this.physics.add.image(width / 2, height - 60, 'basket').setImmovable(true);
+    this.basket.body.allowGravity = false;
+
+    this.stars = this.physics.add.group();
+    this.physics.add.overlap(this.basket, this.stars, (_, star) => {
+      star.destroy();
+      this.score++;
+      this.scoreText.setText('Score: ' + this.score);
+    });
+
+    this.scoreText = this.add.text(12, 12, 'Score: 0', { fontSize: '24px', color: '#fff' });
+    this.livesText = this.add.text(width - 12, 12, '♥♥♥', { fontSize: '24px', color: '#ff6b6b' }).setOrigin(1, 0);
+
+    // Touch / mouse drag moves the basket.
+    this.input.on('pointermove', p => this.moveBasket(p.x));
+    this.input.on('pointerdown', p => {
+      if (this.over) this.scene.restart(); else this.moveBasket(p.x);
+    });
+
+    this.spawnTimer = this.time.addEvent({ delay: 800, loop: true, callback: this.spawnStar, callbackScope: this });
+  }
+
+  moveBasket(x) {
+    if (this.over) return;
+    const half = this.basket.width / 2;
+    this.basket.x = Phaser.Math.Clamp(x, half, this.scale.width - half);
+  }
+
+  spawnStar() {
+    const x = Phaser.Math.Between(20, this.scale.width - 20);
+    const star = this.stars.create(x, -20, 'star');
+    // Gets faster as the score climbs.
+    star.setVelocityY(150 + this.score * 6);
+  }
+
+  update() {
+    if (this.over) return;
+    this.stars.getChildren().forEach(star => {
+      if (star.y > this.scale.height + 20) {
+        star.destroy();
+        this.lives--;
+        this.livesText.setText('♥'.repeat(Math.max(this.lives, 0)));
+        if (this.lives <= 0) this.endGame();
+      }
+    });
+  }
+
+  endGame() {
+    this.over = true;
+    this.spawnTimer.remove();
+    this.stars.clear(true, true);
+    const { width, height } = this.scale;
+    this.add.text(width / 2, height / 2 - 30, 'Game Over', { fontSize: '40px', color: '#fff' }).setOrigin(0.5);
+    this.add.text(width / 2, height / 2 + 20, 'Score: ' + this.score + '\nTap to play again',
+      { fontSize: '22px', color: '#ccc', align: 'center' }).setOrigin(0.5);
+  }
+}
+
+new Phaser.Game({
+  type: Phaser.AUTO,
+  backgroundColor: '#0b1020',
+  physics: { default: 'arcade' },
+  scale: {
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+    width: 360,
+    height: 640
+  },
+  scene: GameScene
+});
+</script>
+</body>
+</html>
