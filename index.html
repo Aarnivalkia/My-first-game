@@ -14,6 +14,7 @@
 <script>
 // Star Catcher: drag your finger (or mouse) to move the basket and catch falling stars.
 // Missing 3 stars ends the game. Tap to restart.
+// Power-ups: green = wider basket, purple = a second mirrored basket (both last 8s).
 
 class GameScene extends Phaser.Scene {
   constructor() { super('game'); }
@@ -27,21 +28,36 @@ class GameScene extends Phaser.Scene {
     // Generate textures so no image assets are needed.
     const g = this.add.graphics();
     g.fillStyle(0xffd23f).fillCircle(16, 16, 16).generateTexture('star', 32, 32).clear();
-    g.fillStyle(0x4ecdc4).fillRoundedRect(0, 0, 90, 24, 8).generateTexture('basket', 90, 24).clear();
+    g.fillStyle(0x4ecdc4).fillRoundedRect(0, 0, 60, 24, 8).generateTexture('basket', 60, 24).clear();
+    g.fillStyle(0x2ecc71).fillRoundedRect(0, 0, 28, 28, 6).generateTexture('grow', 28, 28).clear();
+    g.fillStyle(0xb15cff).fillRoundedRect(0, 0, 28, 28, 14).generateTexture('double', 28, 28).clear();
     g.destroy();
 
+    this.growUntil = 0;
+    this.doubleUntil = 0;
+
     this.basket = this.physics.add.image(width / 2, height - 60, 'basket').setImmovable(true);
-    this.basket.body.allowGravity = false;
+    this.basket2 = this.physics.add.image(width / 2, height - 60, 'basket').setImmovable(true).setVisible(false);
+    this.baskets = [this.basket, this.basket2];
+    this.baskets.forEach(b => { b.body.allowGravity = false; });
+    this.basket2.body.enable = false;
 
     this.stars = this.physics.add.group();
-    this.physics.add.overlap(this.basket, this.stars, (_, star) => {
+    this.powerups = this.physics.add.group();
+    this.physics.add.overlap(this.baskets, this.stars, (_, star) => {
       star.destroy();
       this.score++;
       this.scoreText.setText('Score: ' + this.score);
     });
+    this.physics.add.overlap(this.baskets, this.powerups, (_, p) => {
+      const until = this.time.now + 8000;
+      if (p.texture.key === 'grow') this.growUntil = until; else this.doubleUntil = until;
+      p.destroy();
+    });
 
     this.scoreText = this.add.text(12, 12, 'Score: 0', { fontSize: '24px', color: '#fff' });
     this.livesText = this.add.text(width - 12, 12, '♥♥♥', { fontSize: '24px', color: '#ff6b6b' }).setOrigin(1, 0);
+    this.buffText = this.add.text(12, 44, '', { fontSize: '16px', color: '#9be29b' });
 
     // Touch / mouse drag moves the basket.
     this.input.on('pointermove', p => this.moveBasket(p.x));
@@ -54,12 +70,23 @@ class GameScene extends Phaser.Scene {
 
   moveBasket(x) {
     if (this.over) return;
-    const half = this.basket.width / 2;
-    this.basket.x = Phaser.Math.Clamp(x, half, this.scale.width - half);
+    this.targetX = x;
+    this.placeBaskets();
+  }
+
+  placeBaskets() {
+    const half = this.basket.displayWidth / 2;
+    this.basket.x = Phaser.Math.Clamp(this.targetX ?? this.scale.width / 2, half, this.scale.width - half);
+    this.basket2.x = this.scale.width - this.basket.x;
   }
 
   spawnStar() {
     const x = Phaser.Math.Between(20, this.scale.width - 20);
+    if (Math.random() < 0.12) {
+      const p = this.powerups.create(x, -20, Math.random() < 0.5 ? 'grow' : 'double');
+      p.setVelocityY(130);
+      return;
+    }
     const star = this.stars.create(x, -20, 'star');
     // Gets faster as the score climbs.
     star.setVelocityY(150 + this.score * 6);
@@ -67,6 +94,18 @@ class GameScene extends Phaser.Scene {
 
   update() {
     if (this.over) return;
+    const now = this.time.now;
+    const grown = this.growUntil > now;
+    const doubled = this.doubleUntil > now;
+    this.baskets.forEach(b => b.setScale(grown ? 1.7 : 1, 1));
+    this.basket2.setVisible(doubled);
+    this.basket2.body.enable = doubled;
+    this.placeBaskets();
+    this.buffText.setText([
+      grown ? 'Wide: ' + Math.ceil((this.growUntil - now) / 1000) + 's' : '',
+      doubled ? 'Double: ' + Math.ceil((this.doubleUntil - now) / 1000) + 's' : ''
+    ].filter(Boolean).join('   '));
+    this.powerups.getChildren().forEach(p => { if (p.y > this.scale.height + 20) p.destroy(); });
     this.stars.getChildren().forEach(star => {
       if (star.y > this.scale.height + 20) {
         star.destroy();
@@ -81,6 +120,7 @@ class GameScene extends Phaser.Scene {
     this.over = true;
     this.spawnTimer.remove();
     this.stars.clear(true, true);
+    this.powerups.clear(true, true);
     const { width, height } = this.scale;
     this.add.text(width / 2, height / 2 - 30, 'Game Over', { fontSize: '40px', color: '#fff' }).setOrigin(0.5);
     this.add.text(width / 2, height / 2 + 20, 'Score: ' + this.score + '\nTap to play again',
